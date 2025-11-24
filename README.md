@@ -100,10 +100,6 @@ const RTC_CONFIG = {
 };
 ```
 
-## Deployment
-
-For production deployment, see [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) for free hosting options including Railway, Render, and Fly.io.
-
 ## Troubleshooting
 
 ### Server Won't Start
@@ -133,11 +129,7 @@ For production deployment, see [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) for 
 - ✅ **Integrity Verification**: SHA-256 checksum validation (when HTTPS available)
 
 ## Browser Support
-
-- Chrome/Edge (latest) ✅
-- Firefox (latest) ✅
-- Safari (latest) ✅
-- Mobile browsers with WebRTC support ✅
+tested on helium, chrome, safari, mozilla
 
 ## Project Structure
 
