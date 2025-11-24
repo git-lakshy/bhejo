@@ -273,7 +273,7 @@ async function generateQRCode(roomId) {
     
     // Get network IP from server if available
     let networkHost = window.location.hostname;
-    let networkPort = window.location.port || '3000';
+    let networkPort = window.location.port;
     
     // If using localhost, try to get network IP from server
     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
@@ -292,7 +292,12 @@ async function generateQRCode(roomId) {
     
     // Create URL with room code parameter for auto-join
     const protocol = window.location.protocol;
-    const shareUrl = `${protocol}//${networkHost}:${networkPort}${window.location.pathname}?room=${roomId}`;
+    // Don't include port for HTTPS (default 443) or if port is empty
+    // Only include port for HTTP on non-standard ports
+    const portPart = (protocol === 'https:' || !networkPort || networkPort === '443' || networkPort === '80') 
+        ? '' 
+        : `:${networkPort}`;
+    const shareUrl = `${protocol}//${networkHost}${portPart}${window.location.pathname}?room=${roomId}`;
     
     console.log(`[QR] Generating QR code for URL: ${shareUrl}`);
     

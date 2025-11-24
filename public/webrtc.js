@@ -1,11 +1,12 @@
 // WebRTC configuration - STUN first for same network, TURN as fallback
 const RTC_CONFIG = {
     iceServers: [
-        // Primary STUN server (Google - most reliable)
+        // Primary STUN servers (Google - most reliable)
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
         
-        // Fallback TURN servers (only if STUN fails)
+        // TURN servers for cloud/deployed environments (required for different networks)
         {
             urls: 'turn:openrelay.metered.ca:80',
             username: 'openrelayproject',
@@ -13,6 +14,16 @@ const RTC_CONFIG = {
         },
         {
             urls: 'turn:openrelay.metered.ca:443',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+        },
+        {
+            urls: 'turn:openrelay.metered.ca:80?transport=tcp',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+        },
+        {
+            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
             username: 'openrelayproject',
             credential: 'openrelayproject'
         }
@@ -295,16 +306,32 @@ class WebRTCManager {
                 else candidateCount.other++;
                 
                 // Log candidate details
-                console.log(`[ICE] Candidate discovered: type=${candidateType}, address=${candidate.address || 'N/A'}, port=${candidate.port}, protocol=${candidateProtocol}`);
+                const candidateAddress = candidate.address || candidate.ip || 'N/A';
+                const candidatePort = candidate.port || 'N/A';
+                console.log(`[ICE] Candidate discovered: type=${candidateType}, address=${candidateAddress}, port=${candidatePort}, protocol=${candidateProtocol}`);
                 
-                // Send candidate immediately
+                // Send candidate immediately - serialize properly
                 if (this.ws && this.ws.readyState === WebSocket.OPEN) {
                     try {
-                        this.ws.send(JSON.stringify({
-                            type: 'ice-candidate',
-                            candidate: event.candidate
-                        }));
-                        console.log(`[ICE] Candidate sent via WebSocket`);
+                        // Serialize RTCIceCandidate properly for WebSocket transmission
+                        // RTCIceCandidate needs to be converted to a plain object
+                        const candidateData = {
+                            candidate: candidate.candidate || '',
+                            sdpMLineIndex: candidate.sdpMLineIndex !== null && candidate.sdpMLineIndex !== undefined ? candidate.sdpMLineIndex : null,
+                            sdpMid: candidate.sdpMid || null,
+                            usernameFragment: candidate.usernameFragment || null
+                        };
+                        
+                        // Only send if we have the candidate string
+                        if (candidateData.candidate) {
+                            this.ws.send(JSON.stringify({
+                                type: 'ice-candidate',
+                                candidate: candidateData
+                            }));
+                            console.log(`[ICE] Candidate sent via WebSocket`);
+                        } else {
+                            console.warn(`[ICE] Candidate missing candidate string, skipping`);
+                        }
                     } catch (error) {
                         console.error(`[ICE] Error sending candidate:`, error);
                         this.pendingIceCandidates.push(event.candidate);
@@ -318,8 +345,17 @@ class WebRTCManager {
                 
                 if (candidateCount.host > 0) {
                     console.log(`[ICE] Host candidates available (${candidateCount.host}) - direct connection possible on same network`);
+                } else if (candidateCount.srflx > 0) {
+                    console.log(`[ICE] srflx candidates available (${candidateCount.srflx}) - STUN working, may connect via NAT traversal`);
+                } else if (candidateCount.relay > 0) {
+                    console.log(`[ICE] Relay candidates available (${candidateCount.relay}) - TURN working, connection via relay`);
                 } else {
-                    console.warn(`[ICE] No host candidates found - may require TURN server for different networks`);
+                    console.error(`[ICE] ⚠️ NO ICE CANDIDATES FOUND! This will prevent connection.`);
+                    console.error(`[ICE] Possible causes:`);
+                    console.error(`[ICE]   1. TURN servers not accessible or misconfigured`);
+                    console.error(`[ICE]   2. Browser blocking WebRTC`);
+                    console.error(`[ICE]   3. Network restrictions`);
+                    console.error(`[ICE]   4. Firewall blocking STUN/TURN traffic`);
                 }
                 
                 // Send any pending candidates
@@ -696,10 +732,23 @@ class WebRTCManager {
                 return;
             }
             
-            await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-            console.log(`[ICE] Added candidate: ${candidate.type} ${candidate.address}:${candidate.port}`);
+            // Validate candidate before adding
+            if (!candidate || typeof candidate !== 'object') {
+                console.warn(`[ICE] Invalid candidate format:`, candidate);
+                return;
+            }
+            
+            // Create RTCIceCandidate with proper validation
+            const iceCandidate = new RTCIceCandidate(candidate);
+            await this.peerConnection.addIceCandidate(iceCandidate);
+            
+            const candidateType = candidate.type || 'unknown';
+            const candidateAddress = candidate.address || candidate.ip || 'N/A';
+            const candidatePort = candidate.port || 'N/A';
+            console.log(`[ICE] Added candidate: type=${candidateType}, address=${candidateAddress}, port=${candidatePort}`);
         } catch (error) {
             console.error('❌ Error adding ICE candidate:', error);
+            console.error('❌ Candidate data:', candidate);
         }
     }
     
