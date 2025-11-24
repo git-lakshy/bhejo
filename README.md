@@ -15,6 +15,10 @@ A peer-to-peer file transfer system that allows you to send files directly betwe
 - ✅ **QR Code Sharing**: Scan QR code to automatically join and receive files
 - ✅ **Room Expiration**: Automatic cleanup of expired rooms (10 minutes)
 
+
+## Looks something like this when using 
+![First successful transfer](https://github.com/user-attachments/assets/9c4c4ab8-85ca-47ef-b27d-8d03d676749d)
+
 ## Requirements
 
 1. **Node.js** (v16 or higher) - [Download](https://nodejs.org/)
