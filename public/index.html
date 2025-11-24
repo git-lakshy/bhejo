@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Send files directly between browsers using peer-to-peer WebRTC. No upload, no storage, completely private.">
+    <title>Bhejo - P2P File Transfer</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-content">
+                <div class="logo">
+                    <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    <h1>Bhejo</h1>
+                </div>
+                <p class="subtitle">Send files directly between browsers • No upload, no storage</p>
+            </div>
+        </header>
+
+        <div id="connection-status" class="status-bar hidden">
+            <div class="status-content">
+                <span class="status-indicator"></span>
+                <span id="status-text"></span>
+            </div>
+        </div>
+
+        <main>
+            <!-- Sender View -->
+            <div id="sender-view" class="view">
+                <div class="upload-area" id="drop-zone">
+                    <div class="upload-content">
+                        <div class="upload-icon-wrapper">
+                            <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="17 8 12 3 7 8"></polyline>
+                                <line x1="12" y1="3" x2="12" y2="15"></line>
+                            </svg>
+                            <div class="upload-pulse"></div>
+                        </div>
+                        <h2>Drop files here or click to select</h2>
+                        <p>No file size limit • Direct peer-to-peer transfer</p>
+                        <input type="file" id="file-input" multiple hidden>
+                    </div>
+                </div>
+
+                <div id="file-list" class="file-list hidden">
+                    <div class="file-list-header">
+                        <h3>Selected Files</h3>
+                        <button id="clear-files-btn" class="btn-text">Clear All</button>
+                    </div>
+                    <div id="file-items-container"></div>
+                </div>
+
+                <div id="share-section" class="share-section hidden">
+                    <div class="code-display">
+                        <label>Share this code:</label>
+                        <div class="code-container">
+                            <input type="text" id="room-code" readonly>
+                            <button id="copy-btn" class="btn-secondary">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                                </svg>
+                                <span>Copy</span>
+                            </button>
+                        </div>
+                        <p class="code-hint">Share this code with the receiver to start transfer</p>
+                    </div>
+                    <div class="qr-container">
+                        <div id="qr-code"></div>
+                    </div>
+                    <div class="progress-container">
+                        <div class="progress-bar">
+                            <div id="progress-fill" class="progress-fill"></div>
+                        </div>
+                        <div class="progress-text">
+                            <span id="progress-percent">0%</span>
+                            <span id="progress-speed"></span>
+                        </div>
+                    </div>
+                    <div class="transfer-controls">
+                        <button id="send-files-btn" class="btn-primary hidden">Send Files Now</button>
+                        <button id="cancel-btn" class="btn-danger">Cancel Transfer</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Receiver View -->
+            <div id="receiver-view" class="view hidden">
+                <div class="join-section">
+                    <h2>Enter room code to receive files</h2>
+                    <div class="code-input-container">
+                        <input type="text" id="join-code" placeholder="Enter 6-digit code" maxlength="6" autocomplete="off">
+                        <button id="join-btn" class="btn-primary">Join</button>
+                    </div>
+                    <p class="hint">Or scan the QR code shared by the sender</p>
+                </div>
+
+                <div id="receiver-status" class="receiver-status hidden">
+                    <div class="status-icon-wrapper">
+                        <div class="status-icon">⏳</div>
+                        <div class="status-spinner"></div>
+                    </div>
+                    <p id="receiver-status-text">Waiting for connection...</p>
+                </div>
+
+                <div id="incoming-files" class="incoming-files hidden">
+                    <h3>Receiving files:</h3>
+                    <div id="files-list"></div>
+                </div>
+
+                <div class="progress-container">
+                    <div class="progress-bar">
+                        <div id="receiver-progress-fill" class="progress-fill"></div>
+                    </div>
+                    <div class="progress-text">
+                        <span id="receiver-progress-percent">0%</span>
+                        <span id="receiver-progress-speed"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Mode Toggle -->
+            <div class="mode-toggle">
+                <button id="sender-mode-btn" class="mode-btn active">Send</button>
+                <button id="receiver-mode-btn" class="mode-btn">Receive</button>
+            </div>
+        </main>
+
+        <footer>
+            <div class="footer-content">
+                <div class="footer-item">
+                    <svg class="footer-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                    </svg>
+                    <span>Encrypted WebRTC</span>
+                </div>
+                <div class="footer-item">
+                    <svg class="footer-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    <span>No Server Storage</span>
+                </div>
+                <div class="footer-item">
+                    <svg class="footer-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="9" cy="7" r="4"></circle>
+                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                    </svg>
+                    <span>Peer-to-Peer</span>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" crossorigin="anonymous"></script>
+    <script src="webrtc.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
+
