@@ -2,7 +2,6 @@
 
 A peer-to-peer file transfer system that allows you to send files directly between browsers using WebRTC. No account required, no file storage, completely private.
 
-https://drive.google.com/file/d/1cpQsR7knbabYsJgktcLVq6bwRlQawct0/view?usp=sharing
 
 ## Features
 
