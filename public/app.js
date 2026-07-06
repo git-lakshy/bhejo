@@ -2,6 +2,7 @@
 let webrtc = null;
 let currentMode = 'sender'; // 'sender' or 'receiver'
 let selectedFiles = [];
+let runtimeConfig = {};
 
 // DOM elements
 const senderView = document.getElementById('sender-view');
@@ -34,12 +35,30 @@ const clearFilesBtn = document.getElementById('clear-files-btn');
 const sendFilesBtn = document.getElementById('send-files-btn');
 
 // Initialize
-init();
+init().catch((error) => {
+    console.error('[App] Failed to initialize:', error);
+});
 
-function init() {
+async function init() {
     setupEventListeners();
+    await loadRuntimeConfig();
     initializeWebRTC();
     checkForRoomParameter();
+}
+
+async function loadRuntimeConfig() {
+    try {
+        const response = await fetch('/api/config', { cache: 'no-store' });
+        if (!response.ok) {
+            throw new Error(`Config request failed with ${response.status}`);
+        }
+
+        runtimeConfig = await response.json();
+        console.log('[App] Runtime config loaded', runtimeConfig);
+    } catch (error) {
+        console.warn('[App] Falling back to built-in RTC config', error);
+        runtimeConfig = {};
+    }
 }
 
 function checkForRoomParameter() {
@@ -247,6 +266,26 @@ function formatFileSize(bytes) {
     return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
 }
 
+function sendTelemetry(event) {
+    const payload = JSON.stringify({
+        ...event,
+        timestamp: new Date().toISOString()
+    });
+
+    if (navigator.sendBeacon) {
+        const blob = new Blob([payload], { type: 'application/json' });
+        navigator.sendBeacon('/api/events', blob);
+        return;
+    }
+
+    fetch('/api/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload,
+        keepalive: true
+    }).catch(() => {});
+}
+
 async function startTransfer() {
     try {
         updateConnectionStatus('Creating room...', 'connecting');
@@ -369,7 +408,7 @@ async function joinRoom() {
     const roomId = joinCodeInput.value.trim().toUpperCase();
     
     if (roomId.length !== 6) {
-        alert('Please enter a valid 6-digit code');
+        alert('Please enter a valid 6-character code');
         return;
     }
 
@@ -444,7 +483,7 @@ function updateConnectionStatus(text, status) {
 }
 
 function initializeWebRTC() {
-    webrtc = new WebRTCManager();
+    webrtc = new WebRTCManager(runtimeConfig.rtcConfig);
     
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}`;
@@ -559,6 +598,12 @@ function initializeWebRTC() {
             webrtc.sendFile(file)
                 .then(() => {
                     console.log(`[App] File ${fileIndex + 1} sent successfully: ${file.name}`);
+                    sendTelemetry({
+                        type: 'file-sent',
+                        role: 'sender',
+                        totalBytes: file.size,
+                        fileName: file.name
+                    });
                     fileIndex++;
                     // Small delay before sending next file
                     setTimeout(sendNextFile, 100);
@@ -654,6 +699,12 @@ function initializeWebRTC() {
         if (currentMode === 'receiver') {
             receiverStatusText.textContent = `Received: ${file.name}`;
             updateConnectionStatus('File received!', 'connected');
+            sendTelemetry({
+                type: 'file-received',
+                role: 'receiver',
+                totalBytes: file.size,
+                fileName: file.name
+            });
         }
     };
 

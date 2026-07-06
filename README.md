@@ -1,156 +1,93 @@
-# Bhejo - P2P File Transfer
+# Bhejo
 
-A peer-to-peer file transfer system that allows you to send files directly between browsers using WebRTC. No account required, no file storage, completely private.
+Browser-to-browser file transfer using WebRTC. The server only handles signaling, room coordination, runtime ICE config, and metrics.
 
+## What changed
 
-## Features
+- Runtime STUN/TURN config now comes from `/api/config` instead of hardcoded browser values.
+- Redis-backed rooms are supported through `REDIS_URL`, so multiple app instances can share room state.
+- Prometheus metrics are available at `/metrics`.
+- Transfer telemetry is reported from the browser to the server for file and byte counters.
+- Docker, Prometheus, and Grafana files are included for self-hosted deployment.
 
-- ✅ **Direct P2P Transfer**: Files are sent directly between browsers using WebRTC
-- ✅ **No Storage**: Files never touch a server - only signaling messages go through
-- ✅ **No Account Required**: Just share a 6-digit code or scan QR code
-- ✅ **Encrypted**: WebRTC automatically encrypts all data (DTLS)
-- ✅ **Large Files**: Supports files of any size with chunking
-- ✅ **Progress Tracking**: Real-time transfer progress and speed
-- ✅ **Robust Transfer**: Chunk sequence numbers, integrity verification, and error detection
-- ✅ **Modern UI**: Beautiful dark theme with purple/pink accents and grainy textures
-- ✅ **QR Code Sharing**: Scan QR code to automatically join and receive files
-- ✅ **Room Expiration**: Automatic cleanup of expired rooms (10 minutes)
+## Quick start
 
-
-## Looks something like this when using 
-![First successful transfer](https://github.com/user-attachments/assets/9c4c4ab8-85ca-47ef-b27d-8d03d676749d)
-
-## Requirements
-
-1. **Node.js** (v16 or higher) - [Download](https://nodejs.org/)
-2. **npm** (comes with Node.js)
-3. **Modern Web Browser** with WebRTC support (Chrome, Firefox, Safari, Edge)
-
-## Quick Start
-
-1. **Install dependencies:**
 ```bash
 npm install
-```
-
-2. **Start the server:**
-```bash
 npm start
 ```
 
-3. **Open in browser:**
-```
-http://localhost:3000
-```
+Open `http://localhost:3000`.
 
-4. **For network access:**
-   - Use the IP address shown in console (e.g., `http://192.168.1.2:3000`)
-   - QR codes automatically use the network IP
+## Why deployed peers often fail to connect
 
-## How It Works
+When the app is deployed, the signaling server may be healthy while WebRTC still fails. The most common cause is TURN reliability, not rooms or WebSockets.
 
-1. **Sender**: Select files and get a 6-digit room code + QR code
-2. **Receiver**: Enter the code or scan the QR code
-3. **Connection**: WebRTC establishes a direct peer-to-peer connection
-4. **Transfer**: Files are chunked and sent directly over the encrypted data channel
-5. **Download**: Receiver automatically downloads the files when complete
+- Same Wi-Fi or same LAN usually works with STUN and host candidates.
+- Different networks often need a real TURN service.
+- Public demo TURN relays are fine for testing, but they are not reliable enough for production.
 
-## Usage
+## Environment variables
 
-### Sending Files
-
-1. Click "Send" mode (default)
-2. Drag & drop files or click to select
-3. Share the 6-digit code or QR code with the receiver
-4. Wait for receiver to join
-5. Files transfer automatically when connection is established
-
-### Receiving Files
-
-1. Click "Receive" mode
-2. Enter the 6-digit room code OR scan the QR code
-3. Wait for connection to establish
-4. Files download automatically when transfer completes
-
-## Configuration
-
-### Environment Variables (Optional)
-
-Create a `.env` file:
 ```env
 PORT=3000
-NODE_ENV=development
+NODE_ENV=production
 ROOM_EXPIRY=600000
-MAX_ROOM_SIZE=2
+
+# Optional Redis room store
+REDIS_URL=redis://localhost:6379
+REDIS_PREFIX=bhejo
+
+# Optional ICE runtime config
+STUN_URLS=stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302
+TURN_URLS=turn:global.relay.metered.ca:80,turn:global.relay.metered.ca:443?transport=tcp
+TURN_USERNAME=your-turn-username
+TURN_CREDENTIAL=your-turn-password
+ICE_TRANSPORT_POLICY=all
+ICE_CANDIDATE_POOL_SIZE=10
+
+# Metrics
+METRICS_ENABLED=true
 ```
 
-### STUN/TURN Servers
+## Deployment notes
 
-Default uses Google's public STUN servers. For different networks, configure TURN server in `public/webrtc.js`:
+### Render or Railway
 
-```javascript
-const RTC_CONFIG = {
-    iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        {
-            urls: 'turn:your-turn-server.com:3478',
-            username: 'your-username',
-            credential: 'your-password'
-        }
-    ]
-};
-```
+- Keep a single instance if you do not have Redis yet.
+- Set `REDIS_URL` only after provisioning Redis.
+- Set TURN credentials through environment variables.
+- Use HTTPS so the app can use secure browser APIs consistently.
 
-## Troubleshooting
+### Docker
 
-### Server Won't Start
-- Port in use: Change `PORT` in `.env` or kill the process using port 3000
-- Node.js not found: Install from [nodejs.org](https://nodejs.org/)
-- Dependencies missing: Run `npm install`
+Docker is a good deployment option here because it gives you one repeatable package for:
 
-### Connection Fails
-- Ensure both devices are on the same network (for local use)
-- Check browser console for errors
-- Verify firewall allows WebRTC traffic
-- For different networks: Configure TURN server or deploy online
+- the Node signaling app
+- Redis
+- Prometheus
+- Grafana
 
-### Files Not Transferring
-- Verify data channel is open (check connection status)
-- Check browser console for errors
-- Ensure room hasn't expired (10 minutes)
-- Try refreshing and creating a new room
+It does not solve WebRTC traversal by itself. You still need good TURN credentials for cross-network reliability.
 
-## Security Features
+## Monitoring
 
-- ✅ **HTTPS/WSS**: Encrypted signaling channel (when deployed)
-- ✅ **DTLS**: WebRTC automatically encrypts data channel
-- ✅ **Room Expiration**: Rooms expire after 10 minutes
-- ✅ **No File Storage**: Files never stored on server
-- ✅ **Ephemeral Rooms**: One-time use room codes
-- ✅ **Integrity Verification**: SHA-256 checksum validation (when HTTPS available)
+- Prometheus scrape target: `http://app:3000/metrics`
+- Grafana default local URL with Docker Compose: `http://localhost:3001`
+- Prometheus local URL with Docker Compose: `http://localhost:9090`
 
-## Browser Support
-tested on helium, chrome, safari, mozilla
+Tracked metrics include:
 
-## Project Structure
+- websocket connections
+- local room count
+- room create and join events
+- signaling message counts
+- file sent and file received events
+- transferred bytes reported by clients
 
-```
-bhejo/
-├── server.js              # Signaling server
-├── package.json           # Dependencies
-├── public/
-│   ├── index.html         # Main UI
-│   ├── style.css          # Styles
-│   ├── app.js             # Application logic
-│   └── webrtc.js          # WebRTC manager
-├── README.md
-└── DEPLOYMENT_GUIDE.md    # Deployment instructions
-```
+## Free-ish stack suggestion
 
-## License
-
-MIT
-
-## Contributing
-
-Contributions welcome! Please feel free to submit a Pull Request.
+- App hosting: Render free web service or a single low-cost container host
+- Redis: Upstash free Redis (`256 MB`, `500K` commands/month at the time of writing)
+- Monitoring: Grafana Cloud free, or the included local Grafana + Prometheus stack
+- TURN: Metered free trial is usable for testing, but not a forever-free production answer

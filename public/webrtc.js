@@ -1,5 +1,5 @@
 // WebRTC configuration - STUN first for same network, TURN as fallback
-const RTC_CONFIG = {
+const DEFAULT_RTC_CONFIG = {
     iceServers: [
         // Primary STUN servers (Google - most reliable)
         { urls: 'stun:stun.l.google.com:19302' },
@@ -38,13 +38,20 @@ const RTC_CONFIG = {
 const CHUNK_SIZE = 64 * 1024;
 
 class WebRTCManager {
-    constructor() {
+    constructor(rtcConfig = {}) {
         this.ws = null;
         this.peerConnection = null;
         this.dataChannel = null;
         this.roomId = null;
         this.role = null; // 'sender' or 'receiver'
         this.isConnected = false;
+        this.rtcConfig = {
+            ...DEFAULT_RTC_CONFIG,
+            ...rtcConfig,
+            iceServers: Array.isArray(rtcConfig.iceServers) && rtcConfig.iceServers.length > 0
+                ? rtcConfig.iceServers
+                : DEFAULT_RTC_CONFIG.iceServers
+        };
         
         // Pending messages (in case peer connection isn't ready yet)
         this.pendingOffer = null;
@@ -280,7 +287,7 @@ class WebRTCManager {
         
         // Create peer connection with enhanced configuration
         const config = {
-            ...RTC_CONFIG,
+            ...this.rtcConfig,
             // Force more aggressive ICE gathering
             iceCandidatePoolSize: 10
         };
@@ -1390,4 +1397,3 @@ class WebRTCManager {
         this.isConnected = false;
     }
 }
-
