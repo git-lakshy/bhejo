@@ -271,33 +271,14 @@ async function generateQRCode(roomId) {
     // Clear any existing QR code
     qrContainer.innerHTML = '';
     
-    // Get network IP from server if available
-    let networkHost = window.location.hostname;
-    let networkPort = window.location.port;
-    
-    // If using localhost, try to get network IP from server
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        try {
-            const response = await fetch('/api/info');
-            const info = await response.json();
-            if (info.networkIP && info.networkIP !== 'localhost') {
-                networkHost = info.networkIP;
-                networkPort = info.port || networkPort;
-                console.log(`[QR] Using network IP from server: ${networkHost}:${networkPort}`);
-            }
-        } catch (error) {
-            console.warn('[QR] Could not fetch server info, using current hostname');
-        }
-    }
-    
     // Create URL with room code parameter for auto-join
     const protocol = window.location.protocol;
     // Don't include port for HTTPS (default 443) or if port is empty
     // Only include port for HTTP on non-standard ports
-    const portPart = (protocol === 'https:' || !networkPort || networkPort === '443' || networkPort === '80') 
+    const portPart = (protocol === 'https:' || !window.location.port || window.location.port === '443' || window.location.port === '80') 
         ? '' 
-        : `:${networkPort}`;
-    const shareUrl = `${protocol}//${networkHost}${portPart}${window.location.pathname}?room=${roomId}`;
+        : `:${window.location.port}`;
+    const shareUrl = `${protocol}//${window.location.hostname}${portPart}${window.location.pathname}?room=${roomId}`;
     
     console.log(`[QR] Generating QR code for URL: ${shareUrl}`);
     
@@ -690,4 +671,3 @@ function initializeWebRTC() {
         alert('The room has expired. Please create a new one.');
     };
 }
-
