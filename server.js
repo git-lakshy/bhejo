@@ -128,6 +128,19 @@ class MemoryRoomStore {
     this.rooms.set(roomId, { ...room, pendingOffer: offer });
   }
 
+  async addPendingCandidate(roomId, candidate) {
+    const room = await this.getRoom(roomId);
+    if (!room) {
+      return;
+    }
+
+    const pendingCandidates = Array.isArray(room.pendingCandidates) ? room.pendingCandidates : [];
+    this.rooms.set(roomId, {
+      ...room,
+      pendingCandidates: [...pendingCandidates, candidate]
+    });
+  }
+
   async consumePendingOffer(roomId) {
     const room = await this.getRoom(roomId);
     if (!room || !room.pendingOffer) {
@@ -136,6 +149,16 @@ class MemoryRoomStore {
 
     this.rooms.set(roomId, { ...room, pendingOffer: null });
     return room.pendingOffer;
+  }
+
+  async consumePendingCandidates(roomId) {
+    const room = await this.getRoom(roomId);
+    if (!room || !Array.isArray(room.pendingCandidates) || room.pendingCandidates.length === 0) {
+      return [];
+    }
+
+    this.rooms.set(roomId, { ...room, pendingCandidates: [] });
+    return room.pendingCandidates;
   }
 }
 
@@ -226,6 +249,13 @@ class RedisRoomStore {
     await this.updateRoom(roomId, (room) => ({ ...room, pendingOffer: offer }));
   }
 
+  async addPendingCandidate(roomId, candidate) {
+    await this.updateRoom(roomId, (room) => ({
+      ...room,
+      pendingCandidates: [...(Array.isArray(room.pendingCandidates) ? room.pendingCandidates : []), candidate]
+    }));
+  }
+
   async consumePendingOffer(roomId) {
     const result = await this.updateRoom(roomId, (room) => {
       if (!room.pendingOffer) {
@@ -240,6 +270,22 @@ class RedisRoomStore {
     }
 
     return result.room.pendingOffer;
+  }
+
+  async consumePendingCandidates(roomId) {
+    const result = await this.updateRoom(roomId, (room) => {
+      if (!Array.isArray(room.pendingCandidates) || room.pendingCandidates.length === 0) {
+        return room;
+      }
+
+      return { ...room, pendingCandidates: [] };
+    });
+
+    if (!result || !Array.isArray(result.room.pendingCandidates)) {
+      return [];
+    }
+
+    return result.room.pendingCandidates;
   }
 }
 
@@ -431,7 +477,8 @@ async function start() {
       const created = await roomStore.createRoom(roomId, {
         createdAt: Date.now(),
         peerCount: 1,
-        pendingOffer: null
+        pendingOffer: null,
+        pendingCandidates: []
       });
 
       if (!created) {
@@ -490,6 +537,11 @@ async function start() {
     if (pendingOffer) {
       send(ws, { type: 'offer', offer: pendingOffer });
     }
+
+    const pendingCandidates = await roomStore.consumePendingCandidates(normalizedRoomId);
+    pendingCandidates.forEach((candidate) => {
+      send(ws, { type: 'ice-candidate', candidate });
+    });
   }
 
   async function removePeer(ws, reasonType) {
@@ -559,6 +611,14 @@ async function start() {
         await publishRoomEvent(ws.roomId, ws.socketId, data);
       }
       return;
+    }
+
+    if (data.type === 'ice-candidate') {
+      const room = await roomStore.getRoom(ws.roomId);
+      if (room && room.peerCount < 2) {
+        await roomStore.addPendingCandidate(ws.roomId, data.candidate);
+        return;
+      }
     }
 
     await publishRoomEvent(ws.roomId, ws.socketId, data);

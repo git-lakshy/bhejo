@@ -915,6 +915,10 @@ function initializeWebRTC() {
         }
     };
 
+    webrtc.onPeerReady = () => {
+        peerJoined = true;
+    };
+
     webrtc.onRelayMessage = (message) => {
         if (currentMode === 'receiver') {
             handleRelayMessage(message);

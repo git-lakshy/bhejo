@@ -627,6 +627,9 @@ class WebRTCManager {
             
             await this.peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
             console.log(`[WebRTC] Set remote description (offer)`);
+            if (this.onPeerReady) {
+                this.onPeerReady({ role: 'receiver', stage: 'offer-received' });
+            }
             
             const answerOptions = {
                 offerToReceiveAudio: false,
@@ -687,6 +690,9 @@ class WebRTCManager {
             
             await this.peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
             console.log(`[WebRTC] Set remote description (answer) - ICE state: ${this.peerConnection.iceConnectionState}, connection state: ${this.peerConnection.connectionState}`);
+            if (this.onPeerReady) {
+                this.onPeerReady({ role: 'sender', stage: 'answer-received' });
+            }
             
             // Process any pending ICE candidates that arrived before the answer
             if (this.pendingIceCandidates.length > 0) {
