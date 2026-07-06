@@ -47,7 +47,7 @@
                             <div class="upload-pulse"></div>
                         </div>
                         <h2>Drop files here or click to select</h2>
-                        <p>No file size limit • Direct peer-to-peer transfer</p>
+                        <p>P2P first • relay fallback for smaller file transfers</p>
                         <input type="file" id="file-input" multiple hidden>
                     </div>
                 </div>
@@ -101,6 +101,9 @@
                     <div class="code-input-container">
                         <input type="text" id="join-code" placeholder="Enter 6-character code" maxlength="6" autocomplete="off">
                         <button id="join-btn" class="btn-primary">Join</button>
+                    </div>
+                    <div class="receiver-actions">
+                        <button id="scan-qr-btn" class="btn-secondary">Scan QR</button>
                     </div>
                     <p class="hint">Or scan the QR code shared by the sender</p>
                 </div>
@@ -163,6 +166,17 @@
                 </div>
             </div>
         </footer>
+    </div>
+
+    <div id="qr-scanner-modal" class="scanner-modal hidden">
+        <div class="scanner-panel">
+            <div class="scanner-header">
+                <h3>Scan Room QR</h3>
+                <button id="qr-scanner-close" class="btn-text">Close</button>
+            </div>
+            <video id="qr-scanner-video" autoplay playsinline muted></video>
+            <p id="qr-scanner-status" class="scanner-status">Allow camera access to scan a room code.</p>
+        </div>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" crossorigin="anonymous"></script>

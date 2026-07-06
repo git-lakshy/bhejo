@@ -761,6 +761,58 @@ main {
     font-size: 0.95rem;
 }
 
+.receiver-actions {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 12px;
+}
+
+.scanner-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 10, 12, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 20;
+}
+
+.scanner-panel {
+    width: min(100%, 420px);
+    background: var(--bg);
+    border: 1px solid var(--border-light);
+    border-radius: 18px;
+    padding: 18px;
+    box-shadow: 0 25px 50px -12px var(--shadow-lg);
+}
+
+.scanner-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+}
+
+.scanner-header h3 {
+    font-size: 1.1rem;
+}
+
+#qr-scanner-video {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
+    border-radius: 14px;
+    background: #111;
+    border: 1px solid var(--border);
+}
+
+.scanner-status {
+    margin-top: 12px;
+    color: var(--text-muted);
+    font-size: 0.92rem;
+}
+
 .receiver-status {
     text-align: center;
     padding: 50px 40px;

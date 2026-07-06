@@ -3,6 +3,11 @@ let webrtc = null;
 let currentMode = 'sender'; // 'sender' or 'receiver'
 let selectedFiles = [];
 let runtimeConfig = {};
+let transferMode = 'p2p';
+let peerJoined = false;
+let relayFallbackTimer = null;
+let relayReceiveState = null;
+let sendFilesNow = () => {};
 
 // DOM elements
 const senderView = document.getElementById('sender-view');
@@ -33,6 +38,11 @@ const receiverProgressSpeed = document.getElementById('receiver-progress-speed')
 const fileItemsContainer = document.getElementById('file-items-container');
 const clearFilesBtn = document.getElementById('clear-files-btn');
 const sendFilesBtn = document.getElementById('send-files-btn');
+const scanQrBtn = document.getElementById('scan-qr-btn');
+const qrScannerModal = document.getElementById('qr-scanner-modal');
+const qrScannerVideo = document.getElementById('qr-scanner-video');
+const qrScannerCloseBtn = document.getElementById('qr-scanner-close');
+const qrScannerStatus = document.getElementById('qr-scanner-status');
 
 // Initialize
 init().catch((error) => {
@@ -120,6 +130,14 @@ function setupEventListeners() {
     joinCodeInput.addEventListener('input', (e) => {
         e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
     });
+
+    if (scanQrBtn) {
+        scanQrBtn.addEventListener('click', startQrScanner);
+    }
+
+    if (qrScannerCloseBtn) {
+        qrScannerCloseBtn.addEventListener('click', stopQrScanner);
+    }
 }
 
 function switchMode(mode) {
@@ -145,6 +163,9 @@ function resetSenderView() {
     fileList.classList.add('hidden');
     shareSection.classList.add('hidden');
     dropZone.classList.remove('hidden');
+    peerJoined = false;
+    transferMode = 'p2p';
+    clearRelayFallbackTimer();
     updateConnectionStatus('', '');
 }
 
@@ -155,6 +176,8 @@ function resetReceiverView() {
     receiverProgressFill.style.width = '0%';
     receiverProgressPercent.textContent = '0%';
     receiverProgressSpeed.textContent = '';
+    relayReceiveState = null;
+    clearRelayFallbackTimer();
     updateConnectionStatus('', '');
 }
 
@@ -286,6 +309,99 @@ function sendTelemetry(event) {
     }).catch(() => {});
 }
 
+function getRelayConfig() {
+    return runtimeConfig.relay || {
+        enabled: false,
+        maxFileSizeBytes: 10 * 1024 * 1024,
+        chunkSizeBytes: 12 * 1024
+    };
+}
+
+function getShareBaseUrl() {
+    if (runtimeConfig.publicBaseUrl) {
+        return runtimeConfig.publicBaseUrl.replace(/\/$/, '');
+    }
+
+    return window.location.origin;
+}
+
+function getShareUrl(roomId) {
+    return `${getShareBaseUrl()}${window.location.pathname}?room=${roomId}`;
+}
+
+function clearRelayFallbackTimer() {
+    if (relayFallbackTimer) {
+        clearTimeout(relayFallbackTimer);
+        relayFallbackTimer = null;
+    }
+}
+
+function updateProgressUI(percent, bytesTransferred, startTime, mode) {
+    const elapsed = Math.max((Date.now() - startTime) / 1000, 0.1);
+    const speed = bytesTransferred / elapsed;
+    const speedText = formatFileSize(speed) + '/s';
+
+    if (mode === 'sender') {
+        progressFill.style.width = percent + '%';
+        progressPercent.textContent = Math.round(percent) + '%';
+        progressSpeed.textContent = speedText;
+    } else {
+        receiverProgressFill.style.width = percent + '%';
+        receiverProgressPercent.textContent = Math.round(percent) + '%';
+        receiverProgressSpeed.textContent = speedText;
+    }
+}
+
+function enableRelayMode(reason) {
+    const relay = getRelayConfig();
+    if (!relay.enabled) {
+        return;
+    }
+
+    if (transferMode === 'relay') {
+        return;
+    }
+
+    transferMode = 'relay';
+    clearRelayFallbackTimer();
+    updateConnectionStatus(`Using relay mode: ${reason}`, 'connecting');
+}
+
+function scheduleRelayFallback() {
+    const relay = getRelayConfig();
+    if (!relay.enabled || currentMode !== 'sender') {
+        return;
+    }
+
+    clearRelayFallbackTimer();
+    relayFallbackTimer = setTimeout(() => {
+        if (!webrtc?.dataChannel || webrtc.dataChannel.readyState !== 'open') {
+            enableRelayMode('direct connection unavailable');
+            if (peerJoined && selectedFiles.length > 0) {
+                sendFilesNow();
+            }
+        }
+    }, 8000);
+}
+
+function base64ToArrayBuffer(base64) {
+    const binaryString = atob(base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let index = 0; index < binaryString.length; index += 1) {
+        bytes[index] = binaryString.charCodeAt(index);
+    }
+    return bytes.buffer;
+}
+
+function arrayBufferToBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let index = 0; index < bytes.byteLength; index += 1) {
+        binary += String.fromCharCode(bytes[index]);
+    }
+    return btoa(binary);
+}
+
 async function startTransfer() {
     try {
         updateConnectionStatus('Creating room...', 'connecting');
@@ -311,13 +427,7 @@ async function generateQRCode(roomId) {
     qrContainer.innerHTML = '';
     
     // Create URL with room code parameter for auto-join
-    const protocol = window.location.protocol;
-    // Don't include port for HTTPS (default 443) or if port is empty
-    // Only include port for HTTP on non-standard ports
-    const portPart = (protocol === 'https:' || !window.location.port || window.location.port === '443' || window.location.port === '80') 
-        ? '' 
-        : `:${window.location.port}`;
-    const shareUrl = `${protocol}//${window.location.hostname}${portPart}${window.location.pathname}?room=${roomId}`;
+    const shareUrl = getShareUrl(roomId);
     
     console.log(`[QR] Generating QR code for URL: ${shareUrl}`);
     
@@ -404,6 +514,88 @@ function drawQRCodeFallback(container, roomId, shareUrl) {
     };
 }
 
+async function startQrScanner() {
+    if (!('BarcodeDetector' in window) || !navigator.mediaDevices?.getUserMedia) {
+        alert('QR scanning is not supported in this browser. Open the shared link directly or enter the room code.');
+        return;
+    }
+
+    try {
+        qrScannerStatus.textContent = 'Starting camera...';
+        qrScannerModal.classList.remove('hidden');
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment' },
+            audio: false
+        });
+
+        qrScannerVideo.srcObject = stream;
+        await qrScannerVideo.play();
+
+        const detector = new BarcodeDetector({ formats: ['qr_code'] });
+        qrScannerStatus.textContent = 'Point the camera at a room QR code';
+
+        const scanFrame = async () => {
+            if (qrScannerModal.classList.contains('hidden')) {
+                return;
+            }
+
+            try {
+                const codes = await detector.detect(qrScannerVideo);
+                if (codes.length > 0) {
+                    handleScannedQr(codes[0].rawValue);
+                    return;
+                }
+            } catch (error) {
+                qrScannerStatus.textContent = 'Scanner is running, but detection is still warming up...';
+            }
+
+            requestAnimationFrame(scanFrame);
+        };
+
+        requestAnimationFrame(scanFrame);
+    } catch (error) {
+        console.error('QR scanner error:', error);
+        stopQrScanner();
+        alert('Unable to access the camera for QR scanning.');
+    }
+}
+
+function stopQrScanner() {
+    if (qrScannerVideo?.srcObject) {
+        qrScannerVideo.srcObject.getTracks().forEach((track) => track.stop());
+        qrScannerVideo.srcObject = null;
+    }
+
+    if (qrScannerModal) {
+        qrScannerModal.classList.add('hidden');
+    }
+}
+
+function handleScannedQr(value) {
+    stopQrScanner();
+
+    try {
+        const scannedUrl = new URL(value);
+        if (scannedUrl.searchParams.get('room')) {
+            window.location.href = scannedUrl.toString();
+            return;
+        }
+    } catch (error) {
+        // Treat it as a plain room code below.
+    }
+
+    const roomId = String(value || '').trim().toUpperCase();
+    if (roomId.length === 6) {
+        switchMode('receiver');
+        joinCodeInput.value = roomId;
+        joinRoom();
+        return;
+    }
+
+    alert('This QR code does not contain a valid Bhejo room link.');
+}
+
 async function joinRoom() {
     const roomId = joinCodeInput.value.trim().toUpperCase();
     
@@ -482,8 +674,165 @@ function updateConnectionStatus(text, status) {
     connectionStatus.className = 'status-bar ' + status;
 }
 
+function downloadReceivedFile(fileName, fileType, chunks) {
+    const blob = new Blob(chunks, { type: fileType || 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    return blob.size;
+}
+
+function handleRelayMessage(message) {
+    if (message.type === 'relay-error') {
+        updateConnectionStatus(message.message || 'Relay error', 'error');
+        return;
+    }
+
+    if (message.type === 'relay-file-metadata') {
+        relayReceiveState = {
+            name: message.name,
+            type: message.mimeType,
+            size: message.size,
+            chunks: [],
+            bytesTransferred: 0,
+            startTime: Date.now()
+        };
+
+        receiverStatus.classList.add('hidden');
+        incomingFiles.classList.remove('hidden');
+        filesList.innerHTML = '';
+
+        const fileItem = document.createElement('div');
+        fileItem.className = 'file-item';
+        fileItem.innerHTML = `
+            <div class="file-info">
+                <div class="file-name">${escapeHtml(message.name)}</div>
+                <div class="file-size">${formatFileSize(message.size)}</div>
+            </div>
+        `;
+        filesList.appendChild(fileItem);
+        updateConnectionStatus('Receiving via relay...', 'connecting');
+        return;
+    }
+
+    if (!relayReceiveState) {
+        return;
+    }
+
+    if (message.type === 'relay-chunk') {
+        const chunkBuffer = base64ToArrayBuffer(message.payload);
+        relayReceiveState.chunks.push(chunkBuffer);
+        relayReceiveState.bytesTransferred += chunkBuffer.byteLength;
+        const percent = Math.min((relayReceiveState.bytesTransferred / relayReceiveState.size) * 100, 100);
+        updateProgressUI(percent, relayReceiveState.bytesTransferred, relayReceiveState.startTime, 'receiver');
+        return;
+    }
+
+    if (message.type === 'relay-complete') {
+        downloadReceivedFile(relayReceiveState.name, relayReceiveState.type, relayReceiveState.chunks);
+        receiverStatusText.textContent = `Received: ${relayReceiveState.name}`;
+        updateConnectionStatus('File received through relay!', 'connected');
+        sendTelemetry({
+            type: 'file-received-relay',
+            role: 'receiver',
+            totalBytes: relayReceiveState.size,
+            fileName: relayReceiveState.name
+        });
+        relayReceiveState = null;
+    }
+}
+
+function sendFileViaRelay(file) {
+    return new Promise((resolve, reject) => {
+        const relay = getRelayConfig();
+
+        if (!relay.enabled) {
+            reject(new Error('Relay mode is disabled'));
+            return;
+        }
+
+        if (!webrtc?.isSignalingReady()) {
+            reject(new Error('Signaling connection not ready'));
+            return;
+        }
+
+        if (file.size > relay.maxFileSizeBytes) {
+            reject(new Error(`Relay mode supports files up to ${formatFileSize(relay.maxFileSizeBytes)}`));
+            return;
+        }
+
+        webrtc.sendSignal({
+            type: 'relay-file-metadata',
+            name: file.name,
+            size: file.size,
+            mimeType: file.type,
+            lastModified: file.lastModified
+        });
+
+        const reader = new FileReader();
+        const chunkSize = relay.chunkSizeBytes || (12 * 1024);
+        let offset = 0;
+        let bytesTransferred = 0;
+        const startTime = Date.now();
+
+        reader.onload = (event) => {
+            try {
+                const chunk = event.target.result;
+                bytesTransferred += chunk.byteLength;
+
+                webrtc.sendSignal({
+                    type: 'relay-chunk',
+                    payload: arrayBufferToBase64(chunk)
+                });
+
+                const percent = Math.min((bytesTransferred / file.size) * 100, 100);
+                updateProgressUI(percent, bytesTransferred, startTime, 'sender');
+
+                offset += chunk.byteLength;
+                if (offset < file.size) {
+                    readNextChunk();
+                    return;
+                }
+
+                webrtc.sendSignal({
+                    type: 'relay-complete',
+                    name: file.name
+                });
+
+                sendTelemetry({
+                    type: 'file-sent-relay',
+                    role: 'sender',
+                    totalBytes: file.size,
+                    fileName: file.name
+                });
+
+                resolve();
+            } catch (error) {
+                reject(error);
+            }
+        };
+
+        reader.onerror = () => reject(new Error('Failed to read file for relay transfer'));
+
+        function readNextChunk() {
+            const slice = file.slice(offset, offset + chunkSize);
+            reader.readAsArrayBuffer(slice);
+        }
+
+        readNextChunk();
+    });
+}
+
 function initializeWebRTC() {
     webrtc = new WebRTCManager(runtimeConfig.rtcConfig);
+    transferMode = 'p2p';
+    peerJoined = false;
+    clearRelayFallbackTimer();
     
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}`;
@@ -510,10 +859,28 @@ function initializeWebRTC() {
         updateConnectionStatus('Signaling server connected', 'connected');
     };
 
+    webrtc.onPeerJoined = (data) => {
+        peerJoined = (data.peerCount || 0) > 1 || data.role === 'receiver';
+        if (currentMode === 'sender' && peerJoined) {
+            updateConnectionStatus('Receiver joined. Preparing connection...', 'connecting');
+            scheduleRelayFallback();
+        }
+    };
+
+    webrtc.onRelayMessage = (message) => {
+        if (currentMode === 'receiver') {
+            handleRelayMessage(message);
+        } else if (message.type === 'relay-error') {
+            updateConnectionStatus(message.message || 'Relay error', 'error');
+        }
+    };
+
     // Set up event handlers
     webrtc.onDataChannelOpen = () => {
         console.log(`[App] Data channel opened - state: ${webrtc.dataChannel?.readyState}, peerConnection: ${webrtc.peerConnection?.connectionState}, ICE: ${webrtc.peerConnection?.iceConnectionState}, files: ${selectedFiles?.length || 0}`);
         
+        clearRelayFallbackTimer();
+        transferMode = 'p2p';
         updateConnectionStatus('Connected! Transferring...', 'connected');
         
         if (currentMode === 'sender') {
@@ -564,14 +931,20 @@ function initializeWebRTC() {
     };
     
     // Function to send files (can be called from multiple places)
-    function sendFilesNow() {
-        if (!webrtc.dataChannel || webrtc.dataChannel.readyState !== 'open') {
+    sendFilesNow = function () {
+        if (!selectedFiles || selectedFiles.length === 0) {
+            console.warn(`[App] No files to send`);
+            return;
+        }
+
+        const useRelay = transferMode === 'relay';
+        if (!useRelay && (!webrtc.dataChannel || webrtc.dataChannel.readyState !== 'open')) {
             console.error(`[App] Cannot send files - data channel not open (state: ${webrtc.dataChannel?.readyState})`);
             return;
         }
-        
-        if (!selectedFiles || selectedFiles.length === 0) {
-            console.warn(`[App] No files to send`);
+
+        if (useRelay && !peerJoined) {
+            updateConnectionStatus('Waiting for receiver before relay transfer...', 'connecting');
             return;
         }
         
@@ -586,24 +959,28 @@ function initializeWebRTC() {
             }
             
             // Check data channel is still open
-            if (!webrtc.dataChannel || webrtc.dataChannel.readyState !== 'open') {
+            if (!useRelay && (!webrtc.dataChannel || webrtc.dataChannel.readyState !== 'open')) {
                 console.error(`[App] Data channel closed during transfer (state: ${webrtc.dataChannel?.readyState})`);
                 updateConnectionStatus('Connection lost during transfer', 'error');
                 return;
             }
             
             const file = selectedFiles[fileIndex];
-            console.log(`[App] Sending file ${fileIndex + 1}/${selectedFiles.length}: ${file.name} (${formatFileSize(file.size)}) - dataChannel state: ${webrtc.dataChannel.readyState}`);
+            console.log(`[App] Sending file ${fileIndex + 1}/${selectedFiles.length}: ${file.name} (${formatFileSize(file.size)}) - mode: ${useRelay ? 'relay' : 'p2p'}`);
             
-            webrtc.sendFile(file)
+            const sendPromise = useRelay ? sendFileViaRelay(file) : webrtc.sendFile(file);
+
+            sendPromise
                 .then(() => {
                     console.log(`[App] File ${fileIndex + 1} sent successfully: ${file.name}`);
-                    sendTelemetry({
-                        type: 'file-sent',
-                        role: 'sender',
-                        totalBytes: file.size,
-                        fileName: file.name
-                    });
+                    if (!useRelay) {
+                        sendTelemetry({
+                            type: 'file-sent',
+                            role: 'sender',
+                            totalBytes: file.size,
+                            fileName: file.name
+                        });
+                    }
                     fileIndex++;
                     // Small delay before sending next file
                     setTimeout(sendNextFile, 100);
@@ -621,7 +998,7 @@ function initializeWebRTC() {
         
         // Start sending files
         sendNextFile();
-    }
+    };
 
     webrtc.onDataChannelClose = () => {
         updateConnectionStatus('Connection closed', 'error');
@@ -637,11 +1014,19 @@ function initializeWebRTC() {
                 receiverStatusText.textContent = 'Connected! Waiting for files...';
                 updateConnectionStatus('Peer connection established', 'connected');
             } else if (state === 'failed') {
-                receiverStatusText.textContent = 'Connection failed. ICE may need TURN server.';
-                updateConnectionStatus('Connection failed - may need TURN server', 'error');
+                receiverStatusText.textContent = getRelayConfig().enabled
+                    ? 'Direct connection failed. Waiting for relay fallback...'
+                    : 'Connection failed. ICE may need TURN server.';
+                if (getRelayConfig().enabled) {
+                    enableRelayMode('peer fallback');
+                } else {
+                    updateConnectionStatus('Connection failed - may need TURN server', 'error');
+                }
                 // Show helpful message
                 setTimeout(() => {
-                    alert('Connection failed!\n\nThis usually happens when:\n1. Both devices are behind restrictive NATs\n2. Firewall is blocking WebRTC\n3. Network doesn\'t allow direct P2P\n\nSolution: Try on same Wi-Fi network, or configure a TURN server.');
+                    alert(getRelayConfig().enabled
+                        ? 'Direct WebRTC connection failed. The app will try the lower-cost relay fallback for smaller files.'
+                        : 'Connection failed!\n\nThis usually happens when:\n1. Both devices are behind restrictive NATs\n2. Firewall is blocking WebRTC\n3. Network doesn\'t allow direct P2P\n\nSolution: Try on same Wi-Fi network, or configure a TURN server.');
                 }, 1000);
             } else if (state === 'disconnected') {
                 receiverStatusText.textContent = 'Connection disconnected.';
@@ -649,9 +1034,18 @@ function initializeWebRTC() {
             }
         } else {
             if (state === 'failed') {
-                updateConnectionStatus('Connection failed - may need TURN server', 'error');
+                if (getRelayConfig().enabled) {
+                    enableRelayMode('direct connection failed');
+                    if (peerJoined && selectedFiles.length > 0) {
+                        sendFilesNow();
+                    }
+                } else {
+                    updateConnectionStatus('Connection failed - may need TURN server', 'error');
+                }
                 setTimeout(() => {
-                    alert('Connection failed!\n\nThis usually happens when:\n1. Both devices are behind restrictive NATs\n2. Firewall is blocking WebRTC\n3. Network doesn\'t allow direct P2P\n\nSolution: Try on same Wi-Fi network, or configure a TURN server.');
+                    alert(getRelayConfig().enabled
+                        ? `Direct WebRTC failed. Relay mode is available for files up to ${formatFileSize(getRelayConfig().maxFileSizeBytes)}.`
+                        : 'Connection failed!\n\nThis usually happens when:\n1. Both devices are behind restrictive NATs\n2. Firewall is blocking WebRTC\n3. Network doesn\'t allow direct P2P\n\nSolution: Try on same Wi-Fi network, or configure a TURN server.');
                 }, 1000);
             } else if (state === 'disconnected') {
                 updateConnectionStatus('Connection lost', 'error');

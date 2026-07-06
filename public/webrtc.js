@@ -4,29 +4,7 @@ const DEFAULT_RTC_CONFIG = {
         // Primary STUN servers (Google - most reliable)
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-        
-        // TURN servers for cloud/deployed environments (required for different networks)
-        {
-            urls: 'turn:openrelay.metered.ca:80',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-        },
-        {
-            urls: 'turn:openrelay.metered.ca:443',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-        },
-        {
-            urls: 'turn:openrelay.metered.ca:80?transport=tcp',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-        },
-        {
-            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-        }
+        { urls: 'stun:stun2.l.google.com:19302' }
     ],
     iceCandidatePoolSize: 10,
     iceTransportPolicy: 'all', // Try both relay and direct connections
@@ -824,6 +802,17 @@ class WebRTCManager {
             case 'connected':
                 console.log(`[WebSocket] Server confirmed connection: ${data.message}`);
                 break;
+            case 'joined':
+                if (data.roomId) {
+                    this.roomId = data.roomId;
+                }
+                if (data.role) {
+                    this.role = data.role;
+                }
+                if (this.onPeerJoined) {
+                    this.onPeerJoined(data);
+                }
+                break;
             case 'offer':
                 this.handleOffer(data.offer);
                 break;
@@ -844,9 +833,29 @@ class WebRTCManager {
                     this.onRoomExpired();
                 }
                 break;
+            case 'relay-file-metadata':
+            case 'relay-chunk':
+            case 'relay-complete':
+            case 'relay-error':
+                if (this.onRelayMessage) {
+                    this.onRelayMessage(data);
+                }
+                break;
             default:
                 console.log('Received message:', data.type);
         }
+    }
+
+    isSignalingReady() {
+        return Boolean(this.ws && this.ws.readyState === WebSocket.OPEN);
+    }
+
+    sendSignal(payload) {
+        if (!this.isSignalingReady()) {
+            throw new Error('Signaling connection not ready');
+        }
+
+        this.ws.send(JSON.stringify(payload));
     }
 
     sendFile(file) {

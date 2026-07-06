@@ -29,6 +29,10 @@ const TURN_CREDENTIAL = process.env.TURN_CREDENTIAL || '';
 const ICE_TRANSPORT_POLICY = process.env.ICE_TRANSPORT_POLICY || 'all';
 const ICE_CANDIDATE_POOL_SIZE = Number(process.env.ICE_CANDIDATE_POOL_SIZE || 10);
 const METRICS_ENABLED = process.env.METRICS_ENABLED !== 'false';
+const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || '';
+const RELAY_ENABLED = process.env.RELAY_ENABLED !== 'false';
+const RELAY_MAX_FILE_SIZE_BYTES = Number(process.env.RELAY_MAX_FILE_SIZE_BYTES || 10 * 1024 * 1024);
+const RELAY_CHUNK_SIZE_BYTES = Number(process.env.RELAY_CHUNK_SIZE_BYTES || 12 * 1024);
 
 class MemoryRoomStore {
   constructor(expiryMs) {
@@ -506,6 +510,21 @@ async function start() {
       return;
     }
 
+    if (data.type === 'relay-file-metadata') {
+      if (!RELAY_ENABLED) {
+        send(ws, { type: 'relay-error', message: 'Relay mode is disabled on this deployment' });
+        return;
+      }
+
+      if (Number(data.size || 0) > RELAY_MAX_FILE_SIZE_BYTES) {
+        send(ws, {
+          type: 'relay-error',
+          message: `Relay mode supports files up to ${Math.round(RELAY_MAX_FILE_SIZE_BYTES / (1024 * 1024))} MB`
+        });
+        return;
+      }
+    }
+
     if (data.type === 'offer') {
       await roomStore.savePendingOffer(ws.roomId, data.offer);
       const room = await roomStore.getRoom(ws.roomId);
@@ -524,7 +543,13 @@ async function start() {
       roomCodeLength: ROOM_CODE_LENGTH,
       roomCodeAlphabet: ROOM_CHARS,
       redisEnabled: Boolean(REDIS_URL),
-      monitoringEnabled: METRICS_ENABLED
+      monitoringEnabled: METRICS_ENABLED,
+      publicBaseUrl: PUBLIC_BASE_URL,
+      relay: {
+        enabled: RELAY_ENABLED,
+        maxFileSizeBytes: RELAY_MAX_FILE_SIZE_BYTES,
+        chunkSizeBytes: RELAY_CHUNK_SIZE_BYTES
+      }
     });
   });
 
