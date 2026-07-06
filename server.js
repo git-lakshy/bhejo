@@ -16,14 +16,6 @@ const ROOM_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const REDIS_URL = process.env.REDIS_URL || '';
 const REDIS_PREFIX = process.env.REDIS_PREFIX || 'bhejo';
 const ROOM_EVENT_CHANNEL = `${REDIS_PREFIX}:room-events`;
-const STUN_URLS = (process.env.STUN_URLS || 'stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302,stun:stun2.l.google.com:19302')
-  .split(',')
-  .map((value) => value.trim())
-  .filter(Boolean);
-const TURN_URLS = (process.env.TURN_URLS || '')
-  .split(',')
-  .map((value) => value.trim())
-  .filter(Boolean);
 const TURN_USERNAME = process.env.TURN_USERNAME || '';
 const TURN_CREDENTIAL = process.env.TURN_CREDENTIAL || '';
 const ICE_TRANSPORT_POLICY = process.env.ICE_TRANSPORT_POLICY || 'all';
@@ -33,6 +25,41 @@ const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || '';
 const RELAY_ENABLED = process.env.RELAY_ENABLED !== 'false';
 const RELAY_MAX_FILE_SIZE_BYTES = Number(process.env.RELAY_MAX_FILE_SIZE_BYTES || 10 * 1024 * 1024);
 const RELAY_CHUNK_SIZE_BYTES = Number(process.env.RELAY_CHUNK_SIZE_BYTES || 12 * 1024);
+
+function parseIceUrlList(rawValue, fallback = []) {
+  if (!rawValue) {
+    return fallback;
+  }
+
+  const trimmed = String(rawValue).trim();
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (Array.isArray(parsed)) {
+      return parsed
+        .map((value) => String(value).trim())
+        .filter(Boolean);
+    }
+
+    if (typeof parsed === 'string') {
+      return parseIceUrlList(parsed, fallback);
+    }
+  } catch (error) {
+    // Fall back to CSV/bracket cleanup below.
+  }
+
+  return trimmed
+    .replace(/^\[/, '')
+    .replace(/\]$/, '')
+    .split(',')
+    .map((value) => value.trim().replace(/^['"]/, '').replace(/['"]$/, ''))
+    .filter(Boolean);
+}
+
+const STUN_URLS = parseIceUrlList(
+  process.env.STUN_URLS || 'stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302,stun:stun2.l.google.com:19302'
+);
+const TURN_URLS = parseIceUrlList(process.env.TURN_URLS || '');
 
 class MemoryRoomStore {
   constructor(expiryMs) {

@@ -64,11 +64,59 @@ async function loadRuntimeConfig() {
         }
 
         runtimeConfig = await response.json();
+        runtimeConfig = sanitizeRuntimeConfig(runtimeConfig);
         console.log('[App] Runtime config loaded', runtimeConfig);
     } catch (error) {
         console.warn('[App] Falling back to built-in RTC config', error);
         runtimeConfig = {};
     }
+}
+
+function sanitizeIceUrls(urls) {
+    if (Array.isArray(urls)) {
+        return urls
+            .map((value) => String(value).trim().replace(/^\[/, '').replace(/\]$/, '').replace(/^['"]/, '').replace(/['"]$/, ''))
+            .filter(Boolean);
+    }
+
+    if (typeof urls === 'string') {
+        return urls
+            .replace(/^\[/, '')
+            .replace(/\]$/, '')
+            .split(',')
+            .map((value) => value.trim().replace(/^['"]/, '').replace(/['"]$/, ''))
+            .filter(Boolean);
+    }
+
+    return [];
+}
+
+function sanitizeRuntimeConfig(config) {
+    if (!config?.rtcConfig?.iceServers) {
+        return config || {};
+    }
+
+    const iceServers = config.rtcConfig.iceServers
+        .map((server) => {
+            const urls = sanitizeIceUrls(server.urls);
+            if (urls.length === 0) {
+                return null;
+            }
+
+            return {
+                ...server,
+                urls: urls.length === 1 ? urls[0] : urls
+            };
+        })
+        .filter(Boolean);
+
+    return {
+        ...config,
+        rtcConfig: {
+            ...config.rtcConfig,
+            iceServers
+        }
+    };
 }
 
 function checkForRoomParameter() {
