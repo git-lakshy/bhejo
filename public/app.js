@@ -412,7 +412,12 @@ function enableRelayMode(reason) {
 
     transferMode = 'relay';
     clearRelayFallbackTimer();
+    console.log(`[Relay] Switching to relay mode: ${reason}`);
     updateConnectionStatus(`Using relay mode: ${reason}`, 'connecting');
+    if (currentMode === 'receiver') {
+        receiverStatus.classList.remove('hidden');
+        receiverStatusText.textContent = 'Direct P2P failed. Waiting for relay transfer...';
+    }
 }
 
 function scheduleRelayFallback() {
@@ -736,6 +741,8 @@ function downloadReceivedFile(fileName, fileType, chunks) {
 }
 
 function handleRelayMessage(message) {
+    console.log('[Relay] Message received:', message.type);
+
     if (message.type === 'relay-error') {
         updateConnectionStatus(message.message || 'Relay error', 'error');
         return;
@@ -782,7 +789,8 @@ function handleRelayMessage(message) {
     }
 
     if (message.type === 'relay-complete') {
-        downloadReceivedFile(relayReceiveState.name, relayReceiveState.type, relayReceiveState.chunks);
+        const receivedSize = downloadReceivedFile(relayReceiveState.name, relayReceiveState.type, relayReceiveState.chunks);
+        console.log(`[Relay] Download triggered for ${relayReceiveState.name} (${formatFileSize(receivedSize)})`);
         receiverStatusText.textContent = `Received: ${relayReceiveState.name}`;
         updateConnectionStatus('File received through relay!', 'connected');
         sendTelemetry({
@@ -1074,12 +1082,11 @@ function initializeWebRTC() {
                 } else {
                     updateConnectionStatus('Connection failed - may need TURN server', 'error');
                 }
-                // Show helpful message
-                setTimeout(() => {
-                    alert(getRelayConfig().enabled
-                        ? 'Direct WebRTC connection failed. The app will try the lower-cost relay fallback for smaller files.'
-                        : 'Connection failed!\n\nThis usually happens when:\n1. Both devices are behind restrictive NATs\n2. Firewall is blocking WebRTC\n3. Network doesn\'t allow direct P2P\n\nSolution: Try on same Wi-Fi network, or configure a TURN server.');
-                }, 1000);
+                if (!getRelayConfig().enabled) {
+                    setTimeout(() => {
+                        alert('Connection failed!\n\nThis usually happens when:\n1. Both devices are behind restrictive NATs\n2. Firewall is blocking WebRTC\n3. Network doesn\'t allow direct P2P\n\nSolution: Try on same Wi-Fi network, or configure a TURN server.');
+                    }, 1000);
+                }
             } else if (state === 'disconnected') {
                 receiverStatusText.textContent = 'Connection disconnected.';
                 updateConnectionStatus('Connection lost', 'error');
@@ -1093,12 +1100,10 @@ function initializeWebRTC() {
                     }
                 } else {
                     updateConnectionStatus('Connection failed - may need TURN server', 'error');
+                    setTimeout(() => {
+                        alert('Connection failed!\n\nThis usually happens when:\n1. Both devices are behind restrictive NATs\n2. Firewall is blocking WebRTC\n3. Network doesn\'t allow direct P2P\n\nSolution: Try on same Wi-Fi network, or configure a TURN server.');
+                    }, 1000);
                 }
-                setTimeout(() => {
-                    alert(getRelayConfig().enabled
-                        ? `Direct WebRTC failed. Relay mode is available for files up to ${formatFileSize(getRelayConfig().maxFileSizeBytes)}.`
-                        : 'Connection failed!\n\nThis usually happens when:\n1. Both devices are behind restrictive NATs\n2. Firewall is blocking WebRTC\n3. Network doesn\'t allow direct P2P\n\nSolution: Try on same Wi-Fi network, or configure a TURN server.');
-                }, 1000);
             } else if (state === 'disconnected') {
                 updateConnectionStatus('Connection lost', 'error');
             } else if (state === 'connected') {
