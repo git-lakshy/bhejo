@@ -39,9 +39,8 @@ Bhejo is a browser-based file sharing application built around WebRTC data chann
 - QR scan join flow for supported browsers
 - Runtime ICE configuration from the backend
 - Small-file relay fallback for unreliable network paths
-- Optional Redis-backed room coordination for multi-instance deployments
+- Redis-backed room coordination for multi-instance deployments
 - Prometheus metrics and Grafana-ready monitoring setup
-- Docker-based local and self-hosted deployment
 
 ## Stack
 
@@ -49,8 +48,7 @@ Bhejo is a browser-based file sharing application built around WebRTC data chann
 - Backend: Node.js, Express, `ws`
 - Realtime: WebRTC, WebSocket
 - Infrastructure: Redis, Docker, Prometheus, Grafana
-- Deployment: Render-compatible, custom-domain friendly
-`
+
 
 ## Quick Start
 
