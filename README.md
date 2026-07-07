@@ -1,16 +1,60 @@
 # Bhejo
 
-Browser-to-browser file transfer using WebRTC. The server only handles signaling, room coordination, runtime ICE config, and metrics.
+<p align="center">
+  <strong>Peer-to-peer file sharing with WebRTC, QR room join, and relay fallback.</strong>
+</p>
 
-## What changed
+<p align="center">
+  <img src="https://img.shields.io/badge/Node.js-18%2B-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Node.js 18+">
+  <img src="https://img.shields.io/badge/WebRTC-P2P-0A84FF?style=for-the-badge" alt="WebRTC P2P">
+  <img src="https://img.shields.io/badge/WebSocket-Signaling-111827?style=for-the-badge" alt="WebSocket Signaling">
+  <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker Ready">
+  <img src="https://img.shields.io/badge/Monitoring-Prometheus%20%2B%20Grafana-E6522C?style=for-the-badge&logo=grafana&logoColor=white" alt="Monitoring">
+  <img src="https://img.shields.io/badge/License-MIT-16A34A?style=for-the-badge" alt="MIT License">
+</p>
 
-- Runtime STUN/TURN config now comes from `/api/config` instead of hardcoded browser values.
-- Redis-backed rooms are supported through `REDIS_URL`, so multiple app instances can share room state.
-- Prometheus metrics are available at `/metrics`.
-- Transfer telemetry is reported from the browser to the server for file and byte counters.
-- Docker, Prometheus, and Grafana files are included for self-hosted deployment.
+<p align="center">
+  <img src="https://img.shields.io/badge/Tag-webrtc-blue?style=flat-square" alt="webrtc">
+  <img src="https://img.shields.io/badge/Tag-p2p-blue?style=flat-square" alt="p2p">
+  <img src="https://img.shields.io/badge/Tag-file--sharing-blue?style=flat-square" alt="file sharing">
+  <img src="https://img.shields.io/badge/Tag-render-blue?style=flat-square" alt="render">
+  <img src="https://img.shields.io/badge/Tag-redis-blue?style=flat-square" alt="redis">
+  <img src="https://img.shields.io/badge/Tag-grafana-blue?style=flat-square" alt="grafana">
+</p>
 
-## Quick start
+---
+
+## Overview
+
+Bhejo is a browser-based file sharing application built around WebRTC data channels for direct peer-to-peer transfer. It uses a lightweight Node.js signaling server for room creation and negotiation, QR-based room sharing for cross-device join, and a constrained WebSocket relay fallback for deployments without TURN.
+
+## Looks something like this when using 
+![First successful transfer](https://github.com/user-attachments/assets/9c4c4ab8-85ca-47ef-b27d-8d03d676749d)
+
+## Highlights
+
+- Direct file transfer over WebRTC data channels
+- Room-based join flow with 6-character room codes
+- QR code generation for room sharing
+- QR scan join flow for supported browsers
+- Runtime ICE configuration from the backend
+- Small-file relay fallback for unreliable network paths
+- Optional Redis-backed room coordination for multi-instance deployments
+- Prometheus metrics and Grafana-ready monitoring setup
+- Docker-based local and self-hosted deployment
+
+## Stack
+
+- Frontend: HTML, CSS, vanilla JavaScript
+- Backend: Node.js, Express, `ws`
+- Realtime: WebRTC, WebSocket
+- Infrastructure: Redis, Docker, Prometheus, Grafana
+- Deployment: Render-compatible, custom-domain friendly
+`
+
+## Quick Start
+
+### Local
 
 ```bash
 npm install
@@ -19,75 +63,39 @@ npm start
 
 Open `http://localhost:3000`.
 
-## Why deployed peers often fail to connect
-
-When the app is deployed, the signaling server may be healthy while WebRTC still fails. The most common cause is TURN reliability, not rooms or WebSockets.
-
-- Same Wi-Fi or same LAN usually works with STUN and host candidates.
-- Different networks often need a real TURN service.
-- Public demo TURN relays are fine for testing, but they are not reliable enough for production.
-
-## Environment variables
-
-```env
-PORT=3000
-NODE_ENV=production
-ROOM_EXPIRY=600000
-
-# Optional Redis room store
-REDIS_URL=redis://localhost:6379
-REDIS_PREFIX=bhejo
-
-# Optional ICE runtime config
-STUN_URLS=stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302
-TURN_URLS=turn:global.relay.metered.ca:80,turn:global.relay.metered.ca:443?transport=tcp
-TURN_USERNAME=your-turn-username
-TURN_CREDENTIAL=your-turn-password
-ICE_TRANSPORT_POLICY=all
-ICE_CANDIDATE_POOL_SIZE=10
-
-# Metrics
-METRICS_ENABLED=true
-```
-
-## Deployment notes
-
-### Render or Railway
-
-- Keep a single instance if you do not have Redis yet.
-- Set `REDIS_URL` only after provisioning Redis.
-- Set TURN credentials through environment variables.
-- Use HTTPS so the app can use secure browser APIs consistently.
-
 ### Docker
 
-Docker is a good deployment option here because it gives you one repeatable package for:
+```bash
+docker compose up --build
+```
 
-- the Node signaling app
-- Redis
-- Prometheus
-- Grafana
+Services:
 
-It does not solve WebRTC traversal by itself. You still need good TURN credentials for cross-network reliability.
+- App: `http://localhost:3000`
+- Grafana: `http://localhost:3001`
+- Prometheus: `http://localhost:9090`
+
 
 ## Monitoring
 
-- Prometheus scrape target: `http://app:3000/metrics`
-- Grafana default local URL with Docker Compose: `http://localhost:3001`
-- Prometheus local URL with Docker Compose: `http://localhost:9090`
+Prometheus metrics are exposed at:
 
-Tracked metrics include:
+- `/metrics`
 
-- websocket connections
-- local room count
-- room create and join events
-- signaling message counts
-- file sent and file received events
-- transferred bytes reported by clients
+Operational endpoints:
 
-## Free-ish stack suggestion
+- `/health`
+- `/api/config`
+- `/metrics`
 
-- App hosting: Render free web service or a single low-cost container host
-- Redis: Upstash free Redis (`256 MB`, `500K` commands/month at the time of writing)
-- Monitoring: Grafana Cloud free, or the included local Grafana + Prometheus stack
-- TURN: Metered free trial is usable for testing, but not a forever-free production answer
+
+
+## Notes
+
+- Direct P2P depends on browser, router, and network path quality.
+- Relay mode is intentionally capped for low-cost hosting.
+- Redis is optional for single-instance deployments.
+
+## License
+
+MIT
